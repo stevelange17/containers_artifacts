@@ -1,0 +1,50 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    
+    - uses: azure/docker-login@v1
+      with:
+        login-server: registrybwj5358.azurecr.io
+        username: ${{ secrets.acr_registrybwj5358_username }}
+        password: ${{ secrets.acr_registrybwj5358_password }}
+    
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/.devcontainer" -f  ".devcontainer/Dockerfile" -t registrybwj5358.azurecr.io/steveteam11aks:${{ github.sha }} --label dockerfile-path=.devcontainer/Dockerfile
+        docker push registrybwj5358.azurecr.io/steveteam11aks:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      with:
+         kubeconfig: ${{ secrets.aks_steveteam11aks_kubeConfig }}
+      id: login
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep steve-team11aksa93a | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace steve-team11aksa93a`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: steve-team11aksa93a
+        container-registry-url: registrybwj5358.azurecr.io
+        container-registry-username: ${{ secrets.acr_registrybwj5358_username }}
+        container-registry-password: ${{ secrets.acr_registrybwj5358_password }}
+        secret-name: steveteam11adockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: steve-team11aksa93a
+        manifests: |
+          manifests/deployment.yml
+          manifests/service.yml
+        images: |
+          registrybwj5358.azurecr.io/steveteam11aks:${{ github.sha }}
+        imagepullsecrets: |
+          steveteam11adockerauth
